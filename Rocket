@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>圓形軌道版</title>
+<style>
+body { margin:0; overflow:hidden; background:black; }
+</style>
+</head>
+
+<body>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+// ===== 場景 =====
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 5000);
+camera.position.set(0,100,200);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+// ===== 控制 =====
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// ===== 光 =====
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
+const sun = new THREE.PointLight(0xffffff, 3);
+sun.position.set(200,200,200);
+scene.add(sun);
+
+// ===== 星空 =====
+const starGeo = new THREE.BufferGeometry();
+const starArr = new Float32Array(15000*3);
+for(let i=0;i<starArr.length;i++){
+    starArr[i]=(Math.random()-0.5)*5000;
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starArr,3));
+scene.add(new THREE.Points(starGeo,new THREE.PointsMaterial({size:1})));
+
+// ===== 貼圖 =====
+const loader = new THREE.TextureLoader();
+
+const earthTex = loader.load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg');
+earthTex.colorSpace = THREE.SRGBColorSpace;
+
+const moonTex = loader.load('https://threejs.org/examples/textures/planets/moon_1024.jpg');
+moonTex.colorSpace = THREE.SRGBColorSpace;
+
+// ===== 地球 =====
+const earth = new THREE.Mesh(
+    new THREE.SphereGeometry(20,64,64),
+    new THREE.MeshStandardMaterial({
+        map: earthTex,
+        emissive: 0x66ccff,
+        emissiveIntensity: 0.6
+    })
+);
+scene.add(earth);
+
+// 大氣層
+const atmosphere = new THREE.Mesh(
+    new THREE.SphereGeometry(25,64,64),
+    new THREE.MeshBasicMaterial({
+        color:0x66ccff,
+        transparent:true,
+        opacity:0.15
+    })
+);
+scene.add(atmosphere);
+
+// ===== 月球 =====
+const moon = new THREE.Mesh(
+    new THREE.SphereGeometry(8,64,64),
+    new THREE.MeshStandardMaterial({
+        map: moonTex,
+        emissive:0x888888,
+        emissiveIntensity:0.2
+    })
+);
+scene.add(moon);
+
+// ===== 火箭 =====
+const rocketGroup = new THREE.Group();
+
+// 本體
+const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.5,0.5,6,32),
+    new THREE.MeshStandardMaterial({color:0xffffff})
+);
+
+// 頭
+const head = new THREE.Mesh(
+    new THREE.ConeGeometry(0.5,2,32),
+    new THREE.MeshStandardMaterial({color:0xff3333})
+);
+head.position.y = 4;
+
+// 火焰
+const flame = new THREE.Mesh(
+    new THREE.ConeGeometry(0.3,1.5,16),
+    new THREE.MeshBasicMaterial({color:0xff6600,transparent:true,opacity:0.8})
+);
+flame.position.y = -4;
+
+rocketGroup.add(body,head,flame);
+scene.add(rocketGroup);
+
+// ===== GUI =====
+const params = {
+    speed: 2
+};
+
+const gui = new GUI();
+gui.add(params,'speed',0.5,5,0.1).name("火箭速度");
+
+// ===== 月球（固定1分鐘一圈）=====
+let moonAngle = 0;
+const moonRadius = 80;
+const moonPeriod = 60; // 60秒一圈
+
+// ===== 火箭圓形軌道 =====
+let rocketAngle = 0;
+const rocketRadius = 50;
+
+// ===== 動畫 =====
+function animate(){
+    requestAnimationFrame(animate);
+    controls.update();
+
+    const dt = 0.016;
+
+    // 地球自轉
+    earth.rotation.y += 0.002;
+    atmosphere.position.copy(earth.position);
+
+    // ===== 月球運動（固定速度）=====
+    const omegaMoon = (2*Math.PI)/moonPeriod;
+    moonAngle += omegaMoon * dt;
+
+    moon.position.set(
+        Math.cos(moonAngle)*moonRadius,
+        0,
+        Math.sin(moonAngle)*moonRadius
+    );
+
+    // ===== 火箭圓形軌道 =====
+    const omegaRocket = params.speed * 0.5;
+    rocketAngle += omegaRocket * dt;
+
+    const rocketPos = new THREE.Vector3(
+        Math.cos(rocketAngle)*rocketRadius,
+        0,
+        Math.sin(rocketAngle)*rocketRadius
+    );
+
+    rocketGroup.position.copy(rocketPos);
+
+    // 火箭朝前
+    const nextPos = new THREE.Vector3(
+        Math.cos(rocketAngle+0.01)*rocketRadius,
+        0,
+        Math.sin(rocketAngle+0.01)*rocketRadius
+    );
+    rocketGroup.lookAt(nextPos);
+
+    // 火焰動畫
+    flame.scale.y = 1 + Math.random()*0.5;
+
+    renderer.render(scene,camera);
+}
+
+animate();
+
+// ===== 視窗調整 =====
+addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+</body>
+</html>
